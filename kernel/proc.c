@@ -117,7 +117,7 @@ found:
   p->pagetable = proc_pagetable(p);
   p->pagetable_kernel = kvminit_proc();
 
-  if(p->pagetable == 0 || p->pagetable_kernel){
+  if(p->pagetable == 0 || p->pagetable_kernel == 0){
     freeproc(p);
     release(&p->lock);
     return 0;

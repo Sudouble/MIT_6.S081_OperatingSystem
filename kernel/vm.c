@@ -5,6 +5,8 @@
 #include "riscv.h"
 #include "defs.h"
 #include "fs.h"
+#include "spinlock.h"
+#include "proc.h"
 
 /*
  * the kernel's page table.
@@ -131,8 +133,9 @@ kvmpa(uint64 va)
   uint64 off = va % PGSIZE;
   pte_t *pte;
   uint64 pa;
-  
-  pte = walk(kernel_pagetable, va, 0);
+
+  struct proc* p = myproc();
+  pte = walk(p->pagetable_kernel, va, 0);
   if(pte == 0)
     panic("kvmpa");
   if((*pte & PTE_V) == 0)
@@ -509,6 +512,16 @@ kvminit_proc()
   return pagetable;
 }
 
+// Free user memory pages,
+// then free page-table pages.
+void
+proc_kvmfree(pagetable_t pagetable, uint64 sz)
+{
+  if(sz > 0)
+    uvmunmap(pagetable, 0, PGROUNDUP(sz)/PGSIZE, 1);
+  freewalk(pagetable);
+}
+
 void
 proc_freepagetable_kernel(pagetable_t pagetable)
 {
@@ -534,5 +547,5 @@ proc_freepagetable_kernel(pagetable_t pagetable)
   // the highest virtual address in the kernel.
   uvmunmap(pagetable, TRAMPOLINE, PGSIZE/PGSIZE, 0);
   
-  freewalk(pagetable);
+  proc_kvmfree(pagetable, 0);
 }
