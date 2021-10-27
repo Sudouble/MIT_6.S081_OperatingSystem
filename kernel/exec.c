@@ -52,6 +52,9 @@ exec(char *path, char **argv)
     if((sz1 = uvmalloc(pagetable, sz, ph.vaddr + ph.memsz)) == 0)
       goto bad;
     sz = sz1;
+    if (sz >= PLIC)
+      goto bad;
+
     if(ph.vaddr % PGSIZE != 0)
       goto bad;
     if(loadseg(pagetable, ph.vaddr, ip, ph.off, ph.filesz) < 0)
@@ -69,6 +72,8 @@ exec(char *path, char **argv)
   sz = PGROUNDUP(sz);
   uint64 sz1;
   if((sz1 = uvmalloc(pagetable, sz, sz + 2*PGSIZE)) == 0)
+    goto bad;
+  if(sz1 >= PLIC)
     goto bad;
   sz = sz1;
   uvmclear(pagetable, sz-2*PGSIZE);
@@ -115,6 +120,16 @@ exec(char *path, char **argv)
   p->trapframe->epc = elf.entry;  // initial program counter = main
   p->trapframe->sp = sp; // initial stack pointer
   proc_freepagetable(oldpagetable, oldsz);
+
+  // copy existing
+  proc_kvmcopy(p->pagetable, p->pagetable_kernel, oldsz);
+  // alloc new position
+  for (uint64 ii = oldsz; ii < p->sz; ii += PGSIZE)
+  {
+    pte_t* pte_user = walk(p->pagetable, ii, 0);
+    pte_t* pte_kernel = walk(p->pagetable_kernel, ii, 1);
+    *pte_kernel = (*pte_user) & (~PTE_U);
+  }
 
   if (p->pid == 1)
   {

@@ -162,7 +162,7 @@ freeproc(struct proc *p)
   p->kstack = 0;
 
   if(p->pagetable_kernel)
-    proc_freepagetable_kernel(p->pagetable_kernel);
+    proc_freepagetable_kernel(p->pagetable_kernel, p->sz);
   p->pagetable_kernel = 0;
 
   p->sz = 0;
@@ -244,6 +244,10 @@ userinit(void)
   uvminit(p->pagetable, initcode, sizeof(initcode));
   p->sz = PGSIZE;
 
+  // pte_t* pte_user = walk(p->pagetable, 0, 0);
+  walk(p->pagetable_kernel, 0, 1);
+  proc_kvmcopy(p->pagetable, p->pagetable_kernel, p->sz);
+
   // prepare for the very first "return" from kernel to user.
   p->trapframe->epc = 0;      // user program counter
   p->trapframe->sp = PGSIZE;  // user stack pointer
@@ -296,6 +300,13 @@ fork(void)
     release(&np->lock);
     return -1;
   }
+
+  if (proc_kvmcopy(p->pagetable_kernel, np->pagetable_kernel, p->sz) < 0) {
+    freeproc(np);
+    release(&np->lock);
+    return -1;
+  }
+
   np->sz = p->sz;
 
   np->parent = p;
