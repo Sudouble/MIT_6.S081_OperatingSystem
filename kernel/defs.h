@@ -184,7 +184,7 @@ void            kvmmap_proc(pagetable_t pagetable, uint64 va, uint64 pa, uint64 
 pagetable_t     kvminit_proc();
 void            proc_freepagetable_kernel(pagetable_t pagetable, uint64 sz);
 int             proc_kvmcopy(pagetable_t old, pagetable_t new, uint64 sz);
-int             proc_kernel_grow(int n);
+int             proc_kernel_grow(int actual_sz, int n);
 
 // plic.c
 void            plicinit(void);

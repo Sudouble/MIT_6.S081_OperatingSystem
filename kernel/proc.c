@@ -244,8 +244,6 @@ userinit(void)
   uvminit(p->pagetable, initcode, sizeof(initcode));
   p->sz = PGSIZE;
 
-  // pte_t* pte_user = walk(p->pagetable, 0, 0);
-  walk(p->pagetable_kernel, 0, 1);
   proc_kvmcopy(p->pagetable, p->pagetable_kernel, p->sz);
 
   // prepare for the very first "return" from kernel to user.
@@ -301,7 +299,7 @@ fork(void)
     return -1;
   }
 
-  if (proc_kvmcopy(p->pagetable_kernel, np->pagetable_kernel, p->sz) < 0) {
+  if (proc_kvmcopy(np->pagetable, np->pagetable_kernel, p->sz) < 0) {
     freeproc(np);
     release(&np->lock);
     return -1;

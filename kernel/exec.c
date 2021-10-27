@@ -121,15 +121,9 @@ exec(char *path, char **argv)
   p->trapframe->sp = sp; // initial stack pointer
   proc_freepagetable(oldpagetable, oldsz);
 
+  uvmunmap(p->pagetable_kernel, 0, PGROUNDUP(oldsz)/PGSIZE, 0);
   // copy existing
-  proc_kvmcopy(p->pagetable, p->pagetable_kernel, oldsz);
-  // alloc new position
-  for (uint64 ii = oldsz; ii < p->sz; ii += PGSIZE)
-  {
-    pte_t* pte_user = walk(p->pagetable, ii, 0);
-    pte_t* pte_kernel = walk(p->pagetable_kernel, ii, 1);
-    *pte_kernel = (*pte_user) & (~PTE_U);
-  }
+  proc_kvmcopy(p->pagetable, p->pagetable_kernel, p->sz);
 
   if (p->pid == 1)
   {

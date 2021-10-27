@@ -50,7 +50,7 @@ sys_sbrk(void)
   if(growproc(n) < 0)
     return -1;
 
-  if (proc_kernel_grow(n) < 0)
+  if (proc_kernel_grow(addr, n) < 0)
     return -1;
     
   return addr;

@@ -517,11 +517,22 @@ kvminit_proc()
 // Free user memory pages,
 // then free page-table pages.
 void
-proc_kvmfree(pagetable_t pagetable, uint64 sz)
+proc_kvmfree(pagetable_t kpgtbl)
 {
-  if(sz > 0)
-    uvmunmap(pagetable, 0, PGROUNDUP(sz)/PGSIZE, 1);
-  freewalk(pagetable);
+  for(int i = 0; i < 512; i++){
+    pte_t pte = kpgtbl[i];
+    if ((pte & PTE_V) == 1 && (pte & (PTE_R|PTE_W|PTE_X)) == 0)
+    {
+		  kpgtbl[i] = 0;
+		  uint64 child = PTE2PA(pte);
+		  proc_kvmfree((pagetable_t)child);
+    }
+    else if(pte & PTE_V)
+    {
+      panic("proc_kvmfree: leaf");
+    }
+  }
+  kfree((void*)kpgtbl);
 }
 
 void
@@ -548,9 +559,9 @@ proc_freepagetable_kernel(pagetable_t pagetable, uint64 sz)
   // map the trampoline for trap entry/exit to
   // the highest virtual address in the kernel.
   uvmunmap(pagetable, TRAMPOLINE, PGSIZE/PGSIZE, 0);
-  uvmunmap(pagetable, 0, sz/PGSIZE, 1);
   
-  proc_kvmfree(pagetable, 0);
+  uvmunmap(pagetable, 0, sz/PGSIZE, 1);
+  uvmfree(pagetable, 0);
 }
 
 int
@@ -604,11 +615,10 @@ prc_kvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz)
 // Grow or shrink kernel memory by n bytes.
 // Return 0 on success, -1 on failure.
 int
-proc_kernel_grow(int n)
+proc_kernel_grow(int actual_sz, int n)
 {
-  uint sz;
+  int sz = actual_sz;
   struct proc *p = myproc();
-  sz = p->sz;
   if(n > 0){
     if((sz = prc_kvmalloc(p->pagetable_kernel, sz, sz + n)) == 0) {
       return -1;
@@ -616,6 +626,5 @@ proc_kernel_grow(int n)
   } else if(n < 0){
     sz = uvmdealloc(p->pagetable_kernel, sz, sz + n);
   }
-  p->sz = sz;
   return 0;
 }
