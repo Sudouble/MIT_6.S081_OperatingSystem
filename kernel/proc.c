@@ -106,6 +106,7 @@ allocproc(void)
 
 found:
   p->pid = allocpid();
+  printf("current PID: %d\n", p->pid);
 
   // Allocate a trapframe page.
   if((p->trapframe = (struct trapframe *)kalloc()) == 0){
@@ -157,7 +158,7 @@ freeproc(struct proc *p)
 
   if (p->kstack)
   {
-    uvmunmap(p->pagetable_kernel, p->kstack, 1, 1);
+    uvmunmap(p->pagetable_kernel, p->kstack, 1, 0);
   }
   p->kstack = 0;
 

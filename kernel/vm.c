@@ -560,7 +560,7 @@ proc_freepagetable_kernel(pagetable_t pagetable, uint64 sz)
   // the highest virtual address in the kernel.
   uvmunmap(pagetable, TRAMPOLINE, PGSIZE/PGSIZE, 0);
   
-  uvmunmap(pagetable, 0, sz/PGSIZE, 1);
+  uvmunmap(pagetable, 0, sz/PGSIZE, 0);
   uvmfree(pagetable, 0);
 }
 
