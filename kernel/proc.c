@@ -106,7 +106,7 @@ allocproc(void)
 
 found:
   p->pid = allocpid();
-  printf("current PID: %d\n", p->pid);
+  // printf("current PID: %d\n", p->pid);
 
   // Allocate a trapframe page.
   if((p->trapframe = (struct trapframe *)kalloc()) == 0){
