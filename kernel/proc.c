@@ -41,7 +41,7 @@ procinit(void)
       // kvmmap(va, (uint64)pa, PGSIZE, PTE_R | PTE_W);
       // p->kstack = va;
   }
-  // kvminithart();
+  kvminithart();
 }
 
 // Must be called with interrupts disabled,
@@ -158,7 +158,7 @@ freeproc(struct proc *p)
 
   if (p->kstack)
   {
-    uvmunmap(p->pagetable_kernel, p->kstack, 1, 0);
+    uvmunmap(p->pagetable_kernel, p->kstack, 1, 1);
   }
   p->kstack = 0;
 
@@ -245,7 +245,7 @@ userinit(void)
   uvminit(p->pagetable, initcode, sizeof(initcode));
   p->sz = PGSIZE;
 
-  proc_kvmcopy(p->pagetable, p->pagetable_kernel, p->sz);
+  proc_kvmcopy(p->pagetable, p->pagetable_kernel, 0, p->sz);
 
   // prepare for the very first "return" from kernel to user.
   p->trapframe->epc = 0;      // user program counter
@@ -300,13 +300,8 @@ fork(void)
     return -1;
   }
 
-  if (proc_kvmcopy(np->pagetable, np->pagetable_kernel, p->sz) < 0) {
-    freeproc(np);
-    release(&np->lock);
-    return -1;
-  }
-
   np->sz = p->sz;
+  proc_kvmcopy(np->pagetable, np->pagetable_kernel, 0, np->sz);
 
   np->parent = p;
 
@@ -512,8 +507,6 @@ scheduler(void)
 
         swtch(&c->context, &p->context);
 
-        kvminithart();
-
         // Process is done running for now.
         // It should have changed its p->state before coming back.
         c->proc = 0;
@@ -524,6 +517,8 @@ scheduler(void)
     }
 #if !defined (LAB_FS)
     if(found == 0) {
+      kvminithart();
+
       intr_on();
       asm volatile("wfi");
     }

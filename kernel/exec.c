@@ -112,6 +112,10 @@ exec(char *path, char **argv)
     if(*s == '/')
       last = s+1;
   safestrcpy(p->name, last, sizeof(p->name));
+
+  uvmunmap(p->pagetable_kernel, 0, PGROUNDUP(oldsz)/PGSIZE, 0);
+  // copy existing
+  proc_kvmcopy(pagetable, p->pagetable_kernel, 0, sz);
     
   // Commit to the user image.
   oldpagetable = p->pagetable;
@@ -120,10 +124,6 @@ exec(char *path, char **argv)
   p->trapframe->epc = elf.entry;  // initial program counter = main
   p->trapframe->sp = sp; // initial stack pointer
   proc_freepagetable(oldpagetable, oldsz);
-
-  uvmunmap(p->pagetable_kernel, 0, PGROUNDUP(oldsz)/PGSIZE, 0);
-  // copy existing
-  proc_kvmcopy(p->pagetable, p->pagetable_kernel, p->sz);
 
   if (p->pid == 1)
   {

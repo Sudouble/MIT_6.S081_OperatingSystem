@@ -23,30 +23,30 @@ extern char trampoline[]; // trampoline.S
 void
 kvminit()
 {
-  kernel_pagetable = kvminit_proc();
-  // memset(kernel_pagetable, 0, PGSIZE);
+  kernel_pagetable = (pagetable_t) kalloc();
+  memset(kernel_pagetable, 0, PGSIZE);
 
-  // // uart registers
-  // kvmmap(UART0, UART0, PGSIZE, PTE_R | PTE_W);
+  // uart registers
+  kvmmap(UART0, UART0, PGSIZE, PTE_R | PTE_W);
 
-  // // virtio mmio disk interface
-  // kvmmap(VIRTIO0, VIRTIO0, PGSIZE, PTE_R | PTE_W);
+  // virtio mmio disk interface
+  kvmmap(VIRTIO0, VIRTIO0, PGSIZE, PTE_R | PTE_W);
 
   // CLINT
   kvmmap(CLINT, CLINT, 0x10000, PTE_R | PTE_W);
 
-  // // PLIC
-  // kvmmap(PLIC, PLIC, 0x400000, PTE_R | PTE_W);
+  // PLIC
+  kvmmap(PLIC, PLIC, 0x400000, PTE_R | PTE_W);
 
-  // // map kernel text executable and read-only.
-  // kvmmap(KERNBASE, KERNBASE, (uint64)etext-KERNBASE, PTE_R | PTE_X);
+  // map kernel text executable and read-only.
+  kvmmap(KERNBASE, KERNBASE, (uint64)etext-KERNBASE, PTE_R | PTE_X);
 
-  // // map kernel data and the physical RAM we'll make use of.
-  // kvmmap((uint64)etext, (uint64)etext, PHYSTOP-(uint64)etext, PTE_R | PTE_W);
+  // map kernel data and the physical RAM we'll make use of.
+  kvmmap((uint64)etext, (uint64)etext, PHYSTOP-(uint64)etext, PTE_R | PTE_W);
 
-  // // map the trampoline for trap entry/exit to
-  // // the highest virtual address in the kernel.
-  // kvmmap(TRAMPOLINE, (uint64)trampoline, PGSIZE, PTE_R | PTE_X);
+  // map the trampoline for trap entry/exit to
+  // the highest virtual address in the kernel.
+  kvmmap(TRAMPOLINE, (uint64)trampoline, PGSIZE, PTE_R | PTE_X);
 }
 
 // Switch h/w page table register to the kernel's page table,
@@ -521,7 +521,7 @@ proc_kvmfree(pagetable_t kpgtbl)
 {
   for(int i = 0; i < 512; i++){
     pte_t pte = kpgtbl[i];
-    if ((pte & PTE_V) == 1 && (pte & (PTE_R|PTE_W|PTE_X)) == 0)
+    if ((pte & PTE_V) && (pte & (PTE_R|PTE_W|PTE_X)) == 0)
     {
 		  kpgtbl[i] = 0;
 		  uint64 child = PTE2PA(pte);
@@ -565,12 +565,16 @@ proc_freepagetable_kernel(pagetable_t pagetable, uint64 sz)
 }
 
 int
-proc_kvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
+proc_kvmcopy(pagetable_t old, pagetable_t new, uint64 start, uint64 end)
 {
   pte_t *pte;
   uint64 i;
 
-  for(i = 0; i < sz; i += PGSIZE){
+  if (start > end)
+    return -1;
+
+  start = PGROUNDUP(start);
+  for(i = start; i < end; i += PGSIZE){
     if((pte = walk(old, i, 0)) == 0)
       panic("proc_kvmcopy: pte should exist");
     if((*pte & PTE_V) == 0)
@@ -584,34 +588,6 @@ proc_kvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
   return 0;
 }
 
-// Allocate PTEs and physical memory to grow process from oldsz to
-// newsz, which need not be page aligned.  Returns new size or 0 on error.
-uint64
-prc_kvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz)
-{
-  char *mem;
-  uint64 a;
-
-  if(newsz < oldsz)
-    return oldsz;
-
-  oldsz = PGROUNDUP(oldsz);
-  for(a = oldsz; a < newsz; a += PGSIZE){
-    mem = kalloc();
-    if(mem == 0){
-      uvmdealloc(pagetable, a, oldsz);
-      return 0;
-    }
-    memset(mem, 0, PGSIZE);
-    if(mappages(pagetable, a, PGSIZE, (uint64)mem, PTE_W|PTE_X|PTE_R) != 0){
-      kfree(mem);
-      uvmdealloc(pagetable, a, oldsz);
-      return 0;
-    }
-  }
-  return newsz;
-}
-
 // Grow or shrink kernel memory by n bytes.
 // Return 0 on success, -1 on failure.
 int
@@ -620,9 +596,7 @@ proc_kernel_grow(int actual_sz, int n)
   int sz = actual_sz;
   struct proc *p = myproc();
   if(n > 0){
-    if((sz = prc_kvmalloc(p->pagetable_kernel, sz, sz + n)) == 0) {
-      return -1;
-    }
+    sz = proc_kvmcopy(p->pagetable, p->pagetable_kernel, sz, sz + n);
   } else if(n < 0){
     sz = uvmdealloc(p->pagetable_kernel, sz, sz + n);
   }
