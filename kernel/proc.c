@@ -20,6 +20,7 @@ static void wakeup1(struct proc *chan);
 static void freeproc(struct proc *p);
 
 extern char trampoline[]; // trampoline.S
+extern char etext[];  // kernel.ld sets this to end of kernel code.
 
 // initialize the proc table at boot time.
 void
@@ -30,16 +31,6 @@ procinit(void)
   initlock(&pid_lock, "nextpid");
   for(p = proc; p < &proc[NPROC]; p++) {
       initlock(&p->lock, "proc");
-
-      // // Allocate a page for the process's kernel stack.
-      // // Map it high in memory, followed by an invalid
-      // // guard page.
-      // char *pa = kalloc();
-      // if(pa == 0)
-      //   panic("kalloc");
-      // uint64 va = KSTACK((int) (p - proc));
-      // kvmmap(va, (uint64)pa, PGSIZE, PTE_R | PTE_W);
-      // p->kstack = va;
   }
   kvminithart();
 }
@@ -85,6 +76,27 @@ allocpid() {
   return pid;
 }
 
+// proc.c
+pagetable_t
+proc_kpagetable(struct proc *p)
+{
+  pagetable_t kpagetable;
+
+  kpagetable = uvmcreate();
+  if (kpagetable == 0)
+    return 0;
+  
+  // Fill in the process's kernel page table, the same as kernel_pagetable
+  kvmmap_proc(kpagetable, UART0, UART0, PGSIZE, PTE_R | PTE_W);
+  kvmmap_proc(kpagetable, VIRTIO0, VIRTIO0, PGSIZE, PTE_R | PTE_W);
+  kvmmap_proc(kpagetable, PLIC, PLIC, 0x400000, PTE_R | PTE_W);
+  kvmmap_proc(kpagetable, KERNBASE, KERNBASE, (uint64)etext-KERNBASE, PTE_R | PTE_X);
+  kvmmap_proc(kpagetable, (uint64)etext, (uint64)etext, PHYSTOP-(uint64)etext, PTE_R | PTE_W);
+  kvmmap_proc(kpagetable, TRAMPOLINE, (uint64)trampoline, PGSIZE, PTE_R | PTE_X);
+  kvmmap_proc(kpagetable, TRAPFRAME, (uint64)(p->trapframe), PGSIZE, PTE_R | PTE_W);
+  return kpagetable;
+}
+
 // Look in the process table for an UNUSED proc.
 // If found, initialize state required to run in the kernel,
 // and return with p->lock held.
@@ -117,6 +129,7 @@ found:
   // An empty user page table.
   p->pagetable = proc_pagetable(p);
   p->pagetable_kernel = kvminit_proc();
+  // p->pagetable_kernel = proc_kpagetable(p);
 
   if(p->pagetable == 0 || p->pagetable_kernel == 0){
     freeproc(p);
@@ -143,6 +156,23 @@ found:
   return p;
 }
 
+// Free a process's kernel page table without also freeing the leaf physical memory pages.
+void
+proc_freekpagetable(pagetable_t kpagetable)
+{ 
+  for (int i = 0; i < 512; i++) {
+		pte_t pte = kpagetable[i];
+		if (pte & PTE_V) {
+			kpagetable[i] = 0;
+			if ((pte & (PTE_R|PTE_W|PTE_X)) == 0) {
+				uint64 child = PTE2PA(pte);
+				proc_freekpagetable((pagetable_t)child);
+			}
+		}
+	} 
+	kfree((void*)kpagetable);
+}
+
 // free a proc structure and the data hanging from it,
 // including user pages.
 // p->lock must be held.
@@ -163,7 +193,10 @@ freeproc(struct proc *p)
   p->kstack = 0;
 
   if(p->pagetable_kernel)
+  {
     proc_freepagetable_kernel(p->pagetable_kernel, p->sz);
+    // proc_freekpagetable(p->pagetable_kernel);
+  }
   p->pagetable_kernel = 0;
 
   p->sz = 0;
@@ -269,11 +302,17 @@ growproc(int n)
 
   sz = p->sz;
   if(n > 0){
+    if (PGROUNDUP(sz + n) >= PLIC)
+    {
+      return -1;
+    }
     if((sz = uvmalloc(p->pagetable, sz, sz + n)) == 0) {
       return -1;
     }
+    proc_kvmcopy(p->pagetable, p->pagetable_kernel, sz-n, sz);
   } else if(n < 0){
     sz = uvmdealloc(p->pagetable, sz, sz + n);
+    proc_kvmcopy(p->pagetable, p->pagetable_kernel, sz, sz-n);
   }
   p->sz = sz;
   return 0;

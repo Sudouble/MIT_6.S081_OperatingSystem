@@ -52,8 +52,6 @@ exec(char *path, char **argv)
     if((sz1 = uvmalloc(pagetable, sz, ph.vaddr + ph.memsz)) == 0)
       goto bad;
     sz = sz1;
-    if (sz >= PLIC)
-      goto bad;
 
     if(ph.vaddr % PGSIZE != 0)
       goto bad;
@@ -72,8 +70,6 @@ exec(char *path, char **argv)
   sz = PGROUNDUP(sz);
   uint64 sz1;
   if((sz1 = uvmalloc(pagetable, sz, sz + 2*PGSIZE)) == 0)
-    goto bad;
-  if(sz1 >= PLIC)
     goto bad;
   sz = sz1;
   uvmclear(pagetable, sz-2*PGSIZE);

@@ -458,7 +458,7 @@ void vmprint_recur(pagetable_t pagetable, int nDepth)
         printf(".. ");
       }
       uint64 child = PTE2PA(pte);
-      printf("%d: pte %p pa %p\n", i, pte, child);
+      printf("..%d: pte %p pa %p\n", i, pte, child);
     }
 
     if((pte & PTE_V) && (pte & (PTE_R|PTE_W|PTE_X)) == 0)
@@ -473,7 +473,7 @@ void vmprint_recur(pagetable_t pagetable, int nDepth)
 void vmprint(pagetable_t pagetable)
 {
   printf("page table %p\n", pagetable);
-  vmprint_recur(pagetable, 1);
+  vmprint_recur(pagetable, 0);
 }
 
 void
@@ -481,6 +481,29 @@ kvmmap_proc(pagetable_t pagetable, uint64 va, uint64 pa, uint64 sz, int perm)
 {
   if(mappages(pagetable, va, sz, pa, perm) != 0)
     panic("kvmmap_proc");
+}
+
+void
+ukvmunmap(pagetable_t pagetable, uint64 va, uint64 size)
+{
+  uint64 a, last;
+  pte_t *pte;
+
+  a = PGROUNDDOWN(va);
+  last = PGROUNDDOWN(va + size - 1);
+
+  for(;;){
+    if((pte = walk(pagetable, a, 0)) == 0)
+      panic("ukvmunmap: walk");
+    if((*pte & PTE_V) == 0)
+      panic("ukvmunmap: not mapped");
+    if(PTE_FLAGS(*pte) == PTE_V)
+      panic("ukvmunmap: not a leaf");
+    *pte = 0;
+    if (a==last)
+      break;
+    a+=PGSIZE;
+  }
 }
 
 pagetable_t
@@ -514,7 +537,7 @@ kvminit_proc()
   return pagetable;
 }
 
-// Free user memory pages,
+// Free kernel memory pages,
 // then free page-table pages.
 void
 proc_kvmfree(pagetable_t kpgtbl)
@@ -527,10 +550,11 @@ proc_kvmfree(pagetable_t kpgtbl)
 		  uint64 child = PTE2PA(pte);
 		  proc_kvmfree((pagetable_t)child);
     }
-    else if(pte & PTE_V)
-    {
-      panic("proc_kvmfree: leaf");
-    }
+    // else if(pte & PTE_V)
+    // {
+    //   printf("pte: %p\n", pte);
+    //   panic("proc_kvmfree: leaf");
+    // }
   }
   kfree((void*)kpgtbl);
 }
@@ -538,30 +562,32 @@ proc_kvmfree(pagetable_t kpgtbl)
 void
 proc_freepagetable_kernel(pagetable_t pagetable, uint64 sz)
 {
-  // uart registers
-  uvmunmap(pagetable, UART0, PGSIZE/PGSIZE, 0);
+  // // uart registers
+  // uvmunmap(pagetable, UART0, PGSIZE/PGSIZE, 0);
 
-  // virtio mmio disk interface
-  uvmunmap(pagetable, VIRTIO0, PGSIZE/PGSIZE, 0);
+  // // virtio mmio disk interface
+  // uvmunmap(pagetable, VIRTIO0, PGSIZE/PGSIZE, 0);
 
-  // // CLINT
-  // kvmmap_proc(pagetable, CLINT, CLINT, 0x10000, PTE_R | PTE_W);
+  // // // CLINT
+  // // kvmmap_proc(pagetable, CLINT, CLINT, 0x10000, PTE_R | PTE_W);
 
-  // PLIC
-  uvmunmap(pagetable, PLIC, 0x400000/PGSIZE, 0);
+  // // PLIC
+  // uvmunmap(pagetable, PLIC, 0x400000/PGSIZE, 0);
 
-  // map kernel text executable and read-only.
-  uvmunmap(pagetable, KERNBASE, (uint64)(etext-KERNBASE)/PGSIZE, 0);
+  // // map kernel text executable and read-only.
+  // uvmunmap(pagetable, KERNBASE, (uint64)(etext-KERNBASE)/PGSIZE, 0);
 
-  // map kernel data and the physical RAM we'll make use of.
-  uvmunmap(pagetable, (uint64)etext, (PHYSTOP-(uint64)etext)/PGSIZE, 0);
+  // // map kernel data and the physical RAM we'll make use of.
+  // uvmunmap(pagetable, (uint64)etext, (PHYSTOP-(uint64)etext)/PGSIZE, 0);
 
-  // map the trampoline for trap entry/exit to
-  // the highest virtual address in the kernel.
-  uvmunmap(pagetable, TRAMPOLINE, PGSIZE/PGSIZE, 0);
+  // // map the trampoline for trap entry/exit to
+  // // the highest virtual address in the kernel.
+  // uvmunmap(pagetable, TRAMPOLINE, PGSIZE/PGSIZE, 0);
   
-  uvmunmap(pagetable, 0, sz/PGSIZE, 0);
-  uvmfree(pagetable, 0);
+  // uvmunmap(pagetable, 0, sz/PGSIZE, 0);
+
+  // vmprint(pagetable);
+  proc_kvmfree(pagetable);
 }
 
 int
@@ -577,8 +603,6 @@ proc_kvmcopy(pagetable_t old, pagetable_t new, uint64 start, uint64 end)
   for(i = start; i < end; i += PGSIZE){
     if((pte = walk(old, i, 0)) == 0)
       panic("proc_kvmcopy: pte should exist");
-    if((*pte & PTE_V) == 0)
-      panic("uvmcopy: page not present");
 
     pte_t *pte_kernel;
     if((pte_kernel = walk(new, i, 1)) == 0)
@@ -596,9 +620,9 @@ proc_kernel_grow(int actual_sz, int n)
   int sz = actual_sz;
   struct proc *p = myproc();
   if(n > 0){
-    sz = proc_kvmcopy(p->pagetable, p->pagetable_kernel, sz, sz + n);
+    proc_kvmcopy(p->pagetable, p->pagetable_kernel, sz, sz + n);
   } else if(n < 0){
-    sz = uvmdealloc(p->pagetable_kernel, sz, sz + n);
+    proc_kvmcopy(p->pagetable, p->pagetable_kernel, sz+n, sz);
   }
   return 0;
 }
