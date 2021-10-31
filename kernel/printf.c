@@ -132,3 +132,21 @@ printfinit(void)
   initlock(&pr.lock, "pr");
   pr.locking = 1;
 }
+
+void backtrace()
+{
+  printf("backtrace:\n");
+  uint64 nStackFrame = r_fp();
+  while (nStackFrame <= PGROUNDUP(nStackFrame) 
+          && nStackFrame > PGROUNDDOWN(nStackFrame))
+  {
+    uint64 nReturnAddr = *(uint64*)(nStackFrame - 8);
+    // printf("%p, fp: %p， up: %p, down: %p\n"
+    //         , nReturnAddr
+    //         , nStackFrame
+    //         , PGROUNDUP(nStackFrame)
+    //         , PGROUNDDOWN(nStackFrame));
+    printf("%p\n", nReturnAddr);
+    nStackFrame = *(uint64*)(nStackFrame - 16);
+  }
+}
