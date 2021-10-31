@@ -44,6 +44,7 @@ test0()
 {
   int i;
   printf("test0 start\n");
+  // printf("periodic addr: %p\n", (uint64)periodic);
   count = 0;
   sigalarm(2, periodic);
   for(i = 0; i < 1000*500000; i++){

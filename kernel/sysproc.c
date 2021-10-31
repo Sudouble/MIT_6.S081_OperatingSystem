@@ -97,3 +97,28 @@ sys_uptime(void)
   release(&tickslock);
   return xticks;
 }
+
+uint64
+sys_sigalarm(void)
+{
+  struct proc* p = myproc();
+  if (argint(0, &p->tick_period) < 0)
+    return -1;
+  uint64 FuncAddr = 0;
+  if (argaddr(1, &FuncAddr) < 0)
+    return -1;
+  p->handler_alarm = (void (*)())(FuncAddr);
+  return 0;
+}
+
+uint64
+sys_sigreturn(void)
+{
+  struct proc* p = myproc();
+  memmove(&p->context, &p->context_last, sizeof(struct context));
+  memmove(p->trapframe, &p->trapFrame_last, sizeof(struct trapframe));
+  
+  p->bIsRunningHandler = 0;
+  return 0;
+}
+
