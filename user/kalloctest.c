@@ -110,6 +110,7 @@ void test2() {
     free1 = countfree();
     if(i % 10 == 9)
       printf(".");
+    // printf("free0: %d, free1: %d\n", free0, free1);
     if(free1 != free0) {
       printf("test2 FAIL: losing pages\n");
       exit(-1);
