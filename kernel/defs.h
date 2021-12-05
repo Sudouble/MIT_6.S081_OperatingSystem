@@ -8,6 +8,13 @@ struct spinlock;
 struct sleeplock;
 struct stat;
 struct superblock;
+struct VMA{
+  int IsUsed; // 0 not, 1 yes
+  uint64 address;
+  uint64 length;
+  uint64 nPermmison;
+  struct file* pfile;
+};
 
 // bio.c
 void            binit(void);
